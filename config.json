@@ -1,0 +1,5 @@
+{
+  "port": 8787,
+  "cdpUrl": "http://127.0.0.1:9222",
+  "flowUrl": "https://app.weavy.ai/flow/ZPTg6OJqGtOWs1TINrb7bB"
+}

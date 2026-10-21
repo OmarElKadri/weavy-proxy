@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# browser profile with live login session — never commit
+.browser-profile/
+
+# runtime state / generated caches (regenerated automatically)
+model-definitions.json
+proxy-flows.json
+weavy-models.json
+
+# obsolete HAR-template experiment (local only)
+flow-template.json
+extract-template.js
+
+logs/
+*.log
