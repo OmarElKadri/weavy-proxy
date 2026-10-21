@@ -96,20 +96,33 @@ Response:
 
 Image editing (multipart, like OpenAI's edits endpoint).
 
-| field  | type   | notes                          |
-|--------|--------|--------------------------------|
-| image  | file   | required, the image to edit    |
-| prompt | string | required, the edit instruction |
-| model  | string | optional, defaults to `"Nano Banana 2.1"` |
+| field  | type      | notes                          |
+|--------|-----------|--------------------------------|
+| image  | file (1+) | required, the image(s) to edit — repeat the field for multi-image edits (up to 16 on most models); `image[]` accepted as an alias |
+| prompt | string    | required, the edit instruction |
+| model  | string    | optional, defaults to `"Nano Banana 2.1"` |
+| size   | string    | optional, OpenAI-style `"WxH"` (e.g. `1024x1024`, `1536x1152`); mapped onto the model's own aspect-ratio/resolution options; omit for the model default |
+| n      | int       | optional, number of images (1–4, default 1) |
 
 ```powershell
 curl -X POST http://127.0.0.1:8787/v1/images/edits `
   -F "model=Nano Banana 2.1" `
   -F "prompt=Make it bright daytime, keep everything else" `
   -F "image=@C:\path\to\image.png"
+
+# multi-image: pass the image field once per file
+curl -X POST http://127.0.0.1:8787/v1/images/edits `
+  -F "prompt=Put the subject of the second image into the scene of the first" `
+  -F "image=@C:\path\to\scene.png" -F "image=@C:\path\to\subject.png" `
+  -F "size=1536x1152"
 ```
 
 Response: same shape as `/v1/images/generations`.
+
+> Under the hood each upload becomes a Weavy "File" (`import`) node wired into the model node
+> with one edge per image and the file object placed in `params.image_1`, `params.image_2`, ...
+> — the same graph and execute body the Weavy editor itself produces. A bare URL in `image_1`
+> is silently dropped by Weavy's runner (`input.images` stays empty), so this wiring is required.
 
 ### `GET /v1/models`
 

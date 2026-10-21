@@ -38,10 +38,23 @@ def _fit_enum(schema_entry: dict | None, want: str | None):
     return None
 
 
-def build_kind(def_data: dict, params: dict) -> dict:
+def build_kind(def_data: dict, params: dict, image_connections=None) -> dict:
+    """image_connections: list of {"nodeId","asset"} in the same order as the uploaded images.
+    The first one is attached to the first free image input slot, mirroring the editor."""
+    conns = list(image_connections or [])
+    conn_idx = 0
     inputs = []
     handles_in = (def_data.get("handles") or {}).get("input") or {}
     for _, h in sorted(handles_in.items(), key=lambda kv: kv[1].get("order") or 0):
+        connection = None
+        if h.get("type") == "image" and conn_idx < len(conns):
+            c = conns[conn_idx]
+            conn_idx += 1
+            connection = {
+                "nodeId": c["nodeId"],
+                "outputId": "file",
+                "file": file_value(c["asset"]),
+            }
         inputs.append([
             {
                 # the app's captured bodies use the handle label here (e.g. "prompt"), not the uuid
@@ -51,7 +64,7 @@ def build_kind(def_data: dict, params: dict) -> dict:
                 "validTypes": [h.get("type")],
                 "required": bool(h.get("required")),
             },
-            None,  # unconnected: values come from params
+            connection,
         ])
 
     parameters = []
@@ -84,7 +97,19 @@ def build_kind(def_data: dict, params: dict) -> dict:
     }
 
 
-def build_model_node(defn: dict, *, prompt=None, image_url=None, aspect=None, resolution=None) -> dict:
+def file_value(asset: dict) -> dict:
+    """The app's file value: a trimmed asset object (exactly these keys, in this order)."""
+    return {k: asset[k] for k in ("type", "url", "width", "height", "thumbnailUrl", "publicId", "id")
+            if k in asset}
+
+
+def build_model_node(defn: dict, *, prompt=None, image_url=None, aspect=None, resolution=None,
+                     image_connections=None, image_assets=None) -> dict:
+    """Images reach the model ONLY as file OBJECTS in params.image_1 (proven against the app's
+    own execute body). A URL string resolves to input.images=[] (ignored), and connection/edges
+    alone are not enough either. image_connections still ride along (the app sends them too)."""
+    assets = list(image_assets or [])
+    urls = list(image_url) if isinstance(image_url, (list, tuple)) else ([image_url] if image_url else [])
     data = copy.deepcopy(defn["data"])
     schema = data.get("schema") or {}
     handles_in = (data.get("handles") or {}).get("input") or {}
@@ -92,11 +117,23 @@ def build_model_node(defn: dict, *, prompt=None, image_url=None, aspect=None, re
 
     if prompt is not None and "prompt" in handles_in:
         params["prompt"] = str(prompt)
-    if image_url:
-        if "image_1" in handles_in:
-            params["image_1"] = image_url
-        elif "image_urls" in params:
-            params["image_urls"] = image_url
+    if assets and "image_1" in handles_in:
+        # one file object per image input; the second and further images get their OWN
+        # handles (image_2, image_3, ...) — the app's "Add another image input" mechanic.
+        # A list stuffed into params.image_1 resolves to input.images=[] (verified).
+        for i, a in enumerate(assets, start=1):
+            label = f"image_{i}"
+            if i > 1 and label not in handles_in:
+                hid = str(uuid.uuid4())
+                handles_in[hid] = {
+                    "id": hid, "type": "image", "label": label, "order": i,
+                    "format": "uri", "required": False,
+                    "description": f"Additional image input {i}",
+                }
+            params[label] = file_value(a)
+    elif urls and "image_1" not in handles_in and "image_urls" in params:
+        # legacy fallback for models without a dedicated image input handle
+        params["image_urls"] = urls[0] if len(urls) == 1 else " ".join(urls)
     fitted = _fit_enum(schema.get("aspect_ratio"), aspect)
     if fitted:
         params["aspect_ratio"] = fitted
@@ -105,7 +142,7 @@ def build_model_node(defn: dict, *, prompt=None, image_url=None, aspect=None, re
         params["resolution"] = fitted
 
     data["params"] = params
-    data["kind"] = build_kind(data, params)
+    data["kind"] = build_kind(data, params, image_connections=image_connections)
 
     return {
         "id": str(uuid.uuid4()),
@@ -124,13 +161,86 @@ def build_model_node(defn: dict, *, prompt=None, image_url=None, aspect=None, re
         "result": [],
         "output": {},
         "selectedOutput": 0,
-        "input": {"prompt": params.get("prompt"), **({"images": [image_url]} if image_url else {})},
+        "input": {"prompt": params.get("prompt"), **({"images": urls} if urls else {})},
         "locked": False,
         "selected": False,
         "width": 460,
         "height": 550,
         "zIndex": 2,
     }
+
+
+def build_import_node(asset: dict) -> dict:
+    """The app's "File" node (type 'import', v3): holds the uploaded asset and exposes a
+    `file` output handle that model image inputs connect to."""
+    return {
+        "id": str(uuid.uuid4()),
+        "dragHandle": ".node-header",
+        "owner": None,
+        "type": "import",
+        "visibility": None,
+        "isModel": False,
+        "position": {"x": -420, "y": -440},
+        "data": {
+            "handles": {
+                "output": {
+                    "file": {
+                        "type": "any",
+                        "label": "File",
+                        "order": 0,
+                        "format": "uri",
+                        "description": "The uploaded file",
+                    }
+                }
+            },
+            "name": "File",
+            "description": None,
+            "color": "Yambo_Blue",
+            "label": None,
+            "menu": None,
+            "params": None,
+            "schema": None,
+            "version": 3,
+            "files": [asset],
+            "selectedIndex": 0,
+            # saved nodes carry their output VALUE here; the server resolves upstream
+            # connections from result/output (same pattern as promptV3's result.prompt)
+            "result": asset,
+            "output": {"type": "image", "file": asset},
+        },
+        "createdAt": None,
+        "locked": False,
+        "selected": False,
+        "width": 260,
+        "height": 120,
+        "zIndex": 1,
+    }
+
+
+def build_image_edges(import_node_ids: list[str], model_node_id: str, handle: str = "image_1",
+                      multi: bool = False) -> list[dict]:
+    """ReactFlow-style edges `<importId>-output-file` -> `<modelId>-input-image_N`.
+    With multi=True the Nth import connects to its own image_N handle (matching the
+    per-image handles the model node gains for multiple inputs)."""
+    edges = []
+    for idx, src in enumerate(import_node_ids, start=1):
+        target_input = f"image_{idx}" if multi else handle
+        edges.append({
+            "id": str(uuid.uuid4()),
+            "source": src,
+            "target": model_node_id,
+            "sourceHandle": f"{src}-output-file",
+            "targetHandle": f"{model_node_id}-input-{target_input}",
+            "type": "custom",
+            "data": {
+                "sourceColor": "Yambo_Blue",
+                "targetColor": None,
+                "sourceHandleType": "image",
+                "targetHandleType": "image",
+            },
+            "selected": False,
+        })
+    return edges
 
 
 _SIZE_RATIOS = [

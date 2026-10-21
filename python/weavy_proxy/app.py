@@ -100,14 +100,25 @@ def create_app(config_path=None) -> FastAPI:
     @app.post("/v1/images/edits")
     async def edits(
         prompt: str = Form(...),
-        image: UploadFile = File(...),
+        image: list[UploadFile] | None = File(None),
+        images_bracket: list[UploadFile] | None = File(None, alias="image[]"),
         model: str | None = Form(None),
+        size: str | None = Form(None),
+        n: int | None = Form(None),
     ):
+        uploads = [f for f in (image or []) + (images_bracket or []) if f and f.filename]
+        if not uploads:
+            return _json_error(400, "at least one image file is required")
         defn = _resolve(model or "Nano Banana 2.1")
-        data = await image.read()
-        url = upload_asset(session, image.filename, data, image.content_type or "image/png")
+        assets = []
+        for f in uploads:
+            data = await f.read()
+            asset = upload_asset(session, f.filename, data, f.content_type or "image/png")
+            assets.append(asset)
+            print(f"[weavy] uploaded {f.filename} -> {asset.get('url')}")
         from .runs import run_model
-        result = run_model(session, defn, prompt=prompt, image_url=url, n=1)
+        result = run_model(session, defn, prompt=prompt, image_assets=assets, n=n or 1,
+                           **_map_size(size, defn))
         return {
             "created": int(time.time()),
             "data": [{"url": u} for u in result["urls"]],

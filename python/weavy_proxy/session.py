@@ -219,10 +219,23 @@ class WeavySession:
         headers = self._headers(headers_extra, recipe_id)
         if json_body is not None:
             headers["content-type"] = "application/json"
+        # curl_cffi >=0.12 removed `files=`; it takes a CurlMime via `multipart=` instead.
+        multipart = None
+        if files:
+            from curl_cffi import CurlMime
+
+            multipart = CurlMime()
+            for field, (filename, data, content_type) in files.items():
+                multipart.addpart(
+                    name=field,
+                    filename=filename or "image.png",
+                    content_type=content_type or "application/octet-stream",
+                    data=data,
+                )
         r = self.http.request(
             method, url, headers=headers,
             json=json_body if json_body is not None else None,
-            files=files, timeout=timeout,
+            multipart=multipart, timeout=timeout,
         )
         if r.status_code in (401, 403) and not _auth_retried:
             body = (r.text or "")[:200]

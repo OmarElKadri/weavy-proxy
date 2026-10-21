@@ -54,21 +54,36 @@ def extract_results(node_runs: list[dict], limit: int, exclude: list[str]) -> li
     return unique[:limit]
 
 
-def run_model(session, defn: dict, *, prompt, image_url=None, aspect=None, resolution=None, n=1,
-              flow_cache="weavy-flow-cache.json"):
-    from .nodes import build_model_node
+def run_model(session, defn: dict, *, prompt, image_url=None, image_urls=None, image_assets=None,
+              aspect=None, resolution=None, n=1, flow_cache="weavy-flow-cache.json"):
+    from .nodes import build_image_edges, build_import_node, build_kind, build_model_node
 
+    urls = list(image_urls or []) + ([image_url] if image_url else [])
+    assets = list(image_assets or [])
     flow_id = ensure_flow(session, flow_cache)
-    node = build_model_node(defn, prompt=prompt, image_url=image_url, aspect=aspect, resolution=resolution)
+    node = build_model_node(defn, prompt=prompt, image_url=urls or None, aspect=aspect,
+                            resolution=resolution, image_assets=assets or None)
+
+    # Feed images the way the app does: one "import" (File) node per upload, edges into the
+    # model's image_1 input, and a {nodeId, outputId:"file", file:{...asset}} connection object
+    # on the model's kind.inputs. Params alone never reach the model (input.images stayed empty).
+    import_nodes, edges = [], []
+    if assets:
+        import_nodes = [build_import_node(a) for a in assets]
+        edges = build_image_edges([n["id"] for n in import_nodes], node["id"], multi=len(assets) > 1)
+        conns = [{"nodeId": n["id"], "asset": a} for n, a in zip(import_nodes, assets)]
+        node["data"]["kind"] = build_kind(node["data"], node["data"].get("params") or {},
+                                          image_connections=conns)
 
     # the server rejects execute for nodes that were never persisted in the recipe
+    save_body = {"name": "proxy", "nodes": [node] + import_nodes, "edges": edges, "v3": True}
     try:
         session.request("POST", f"/api/v1/recipes/{flow_id}/save",
-                        json_body={"name": "proxy", "nodes": [node], "edges": []}, recipe_id=flow_id)
+                        json_body=save_body, recipe_id=flow_id)
     except RuntimeError as e:
         print(f"[weavy] save warning: {e}")
 
-    body = {"numberOfRuns": max(1, min(int(n or 1), 4)), "nodes": [node], "edges": []}
+    body = {"numberOfRuns": max(1, min(int(n or 1), 4)), "nodes": [node], "edges": edges}
     started = session.post_json(f"/api/v1/batches/recipes/{flow_id}/execute", body, recipe_id=flow_id)
     batch_id = started.get("batchId")
     if not batch_id:
@@ -103,7 +118,12 @@ def run_model(session, defn: dict, *, prompt, image_url=None, aspect=None, resol
             raise RunError(f"Weavy run failed: {err_text}")
 
         if states and all(("COMPLETED" in s or "SUCCEED" in s) for s in states):
-            urls = extract_results(node_runs, body["numberOfRuns"], [image_url] if image_url else [])
+            model_run = next((nr for nr in node_runs if nr.get("nodeId") == node["id"]), None)
+            resolved = (model_run or {}).get("input")
+            if resolved is not None:
+                print(f"[weavy] resolved input: {json.dumps(resolved)[:400]}")
+            exclude = urls + [a.get("url") for a in assets if a.get("url")]
+            urls = extract_results(node_runs, body["numberOfRuns"], exclude)
             print(f"[weavy] run completed; urls: {len(urls)}")
             if not urls:
                 raise RunError("Run completed but no media URL found: " + json.dumps(node_runs)[:400])
@@ -111,7 +131,10 @@ def run_model(session, defn: dict, *, prompt, image_url=None, aspect=None, resol
     raise RunError("Timed out waiting for Weavy run")
 
 
-def upload_asset(session, filename: str, data: bytes, content_type: str = "image/png") -> str:
+def upload_asset(session, filename: str, data: bytes, content_type: str = "image/png") -> dict:
+    """Upload a file and return Weavy's asset object (url/publicId/type/...).
+    The full object (not just the URL) is required for the import-node file payload and the
+    kind.inputs connection object."""
     r = session.request(
         "POST",
         "/api/v1/assets/upload-asset?runType=workflowExecution",
@@ -120,11 +143,10 @@ def upload_asset(session, filename: str, data: bytes, content_type: str = "image
     )
     j = r.json()
     asset = j.get("asset") or j
-    url = (asset or {}).get("url") or (asset or {}).get("secure_url")
-    if not url:
+    if not isinstance(asset, dict) or not (asset.get("url") or asset.get("secure_url")):
         blob = json.dumps(j)
         m = MEDIA_RE.search(blob)
-        url = m.group(0) if m else None
-    if not url:
-        raise RunError(f"upload-asset returned no URL: {blob[:300]}")
-    return url
+        if not m:
+            raise RunError(f"upload-asset returned no URL: {blob[:300]}")
+        asset = {"url": m.group(0), "type": "image"}
+    return asset
