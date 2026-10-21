@@ -5,8 +5,24 @@ An **OpenAI-compatible image generation API** that runs on top of your logged-in
 `http://127.0.0.1:8787/v1` and generate/edit images with Weavy's 80+ models
 (Nano Banana 2.1, Flux 3, Seedream, Ideogram, GPT Image 2.5, ...) using your existing credits.
 
-No Weavy API key or reverse-engineered auth token is stored anywhere. All Weavy calls execute
-**inside your real browser** via the Chrome DevTools Protocol, so Cloudflare sees a genuine browser.
+Two editions:
+
+| Edition | Path | Needs a browser? | Traffic route |
+|---|---|---|---|
+| **Node + CDP** (original) | `weavy-proxy.mjs` | Yes, open and signed in | Every API call runs inside the browser page |
+| **Python browserless** (`python/`) | `python -m weavy_proxy` | Only for one-time setup; auto-rescues cookies from a CDP browser when Cloudflare rotates | Direct HTTPS with Chrome-impersonating TLS (`curl_cffi`) |
+
+> **Cloudflare reality check** (measured 2026-10-21): api.weavy.ai is protected by rotating,
+> browser-bound Cloudflare clearance. A captured cookie + Chrome-impersonating client passes for
+> a while, but clearance rotates and then only a real browser (which re-solves challenges
+> silently) keeps access. The Python edition therefore ships with a **hybrid** rescue: when a
+> request gets challenged, it pulls fresh cookies from any browser exposing CDP on
+> `127.0.0.1:9222` (default; configurable). With the debug-enabled browser running, it runs for
+> days without touch; without it, re-run the config generator when it blocks.
+
+No Weavy API key or token is stored anywhere by either edition. The Node edition tunnels every
+call through the real browser; the Python edition authenticates with a pasted Firebase refresh
+token (re-minted hourly against Google) plus Chrome-impersonating TLS.
 
 ```
 your script ──HTTP──> weavy-proxy (127.0.0.1:8787) ──CDP──> Brave (signed into app.weavy.ai) ──HTTPS──> api.weavy.ai
@@ -173,6 +189,57 @@ Environment variables:
 | `model-definitions.json` | cached model catalog (auto-refreshed daily)      |
 | `proxy-flows.json`       | id of the proxy-owned Weavy flow                 |
 | `.browser-profile\`      | Brave profile holding your Weavy login           |
+
+## Browserless edition (`python/`)
+
+Same endpoints, same pipeline (definitions -> proxy-owned flow -> save node -> execute -> poll),
+but all traffic goes out as direct HTTPS with a Chrome-impersonating TLS fingerprint — no browser
+in the request path.
+
+### One-time setup
+
+1. Create the session material while signed in at app.weavy.ai:
+   - DevTools -> Network -> click **any request to `api.weavy.ai`** -> right-click -> Copy ->
+     **Copy as cURL (bash)** -> save to `python/input_curl.txt`.
+   - In the DevTools **Console**, run `python/console-snippet.js` and save its JSON output to
+     `python/refresh_token.txt`.
+2. Generate the config and start:
+
+   ```powershell
+   cd python
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   python generate_weavy_config.py input_curl.txt --refresh-file refresh_token.txt
+   python -m weavy_proxy --port 8787
+   ```
+
+3. Test:
+
+   ```powershell
+   curl http://127.0.0.1:8787/healthz      # {"status":"ok","session":"authorized","credits":129}
+   curl http://127.0.0.1:8787/v1/credits
+   ```
+
+`weavy_config.json` contains your live session material — it is gitignored and must never be
+shared or committed.
+
+### Staying alive
+
+- The Firebase **refresh token** keeps the Bearer token fresh indefinitely (Google endpoint, no
+  Cloudflare involved; the token rolls itself on every refresh).
+- Cloudflare **clearance cookies** are the fragile part (see the reality check above). The proxy
+  auto-rescues them from a browser on `cdpUrl` (default `http://127.0.0.1:9222`) whenever a
+  request gets challenged. Launch that browser with `..\start-browser.ps1` and leave it open for
+  fully unattended operation — the proxy never sends traffic through it, it only borrows cookies.
+- If no browser is reachable, blocked requests fail with a clear message; re-run the generator.
+
+### Tests
+
+```powershell
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Troubleshooting
 

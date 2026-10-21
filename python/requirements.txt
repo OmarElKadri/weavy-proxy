@@ -1,0 +1,5 @@
+curl_cffi>=0.7,<1
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+websocket-client>=1.7

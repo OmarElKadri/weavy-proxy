@@ -13,5 +13,15 @@ weavy-models.json
 flow-template.json
 extract-template.js
 
+# python browserless edition — session material is a live login, never commit
+python/.venv/
+python/weavy_config.json
+python/input_curl.txt
+python/refresh_token.txt
+python/weavy-definition-cache.json
+python/weavy-flow-cache.json
+__pycache__/
+*.pyc
+
 logs/
 *.log

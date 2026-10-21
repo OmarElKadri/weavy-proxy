@@ -1,0 +1,172 @@
+{
+ "id": "bebebed5-50c1-4701-98b3-86929db21585",
+ "dragHandle": ".node-header",
+ "owner": null,
+ "type": "custommodelV2",
+ "visibility": null,
+ "isModel": true,
+ "data": {
+  "handles": {
+   "input": {
+    "prompt": {
+     "id": "dowp4A1BWXIovGVDkD0o",
+     "type": "text",
+     "label": "prompt",
+     "order": 0,
+     "format": "text",
+     "required": true,
+     "description": "Description of the edits you want to make"
+    },
+    "image_1": {
+     "id": "DAeb7gVmPkddYRJbt1ED",
+     "type": "image",
+     "label": "image_1",
+     "order": 1,
+     "format": "uri",
+     "required": false,
+     "description": "The image you want to edit"
+    }
+   },
+   "output": {
+    "result": {
+     "id": "DAeb7gVmPkddYRJbt1EE",
+     "type": "image",
+     "label": "result",
+     "order": 0,
+     "format": "uri",
+     "description": "Result image"
+    }
+   }
+  },
+  "name": "Nano Banana 2.1",
+  "description": "Google's state-of-the-art image generation and editing model",
+  "color": "Red",
+  "label": null,
+  "menu": {
+   "icon": "EmojiObjectsIcon",
+   "isModel": true,
+   "displayName": "Gemini Edit"
+  },
+  "model": {
+   "name": "fal-ai/nano-banana-2/edit",
+   "service": "fal_imported",
+   "version": "fal-ai/nano-banana-2/edit"
+  },
+  "params": {
+   "seed": {
+    "seed": 678228,
+    "isRandom": true
+   },
+   "model": "Nano Banana 2.1",
+   "resolution": "1K",
+   "aspect_ratio": "Default",
+   "output_format": "png",
+   "thinking_level": "Minimal",
+   "enable_web_search": false
+  },
+  "schema": {
+   "seed": {
+    "type": "seed",
+    "title": "Seed",
+    "required": false,
+    "description": "Seed value for random number generator. Uncheck for reproducible results."
+   },
+   "model": {
+    "type": "enum",
+    "order": 0,
+    "title": "Model",
+    "default": "Nano Banana 2.1",
+    "options": [
+     "Nano Banana 2",
+     "Nano Banana 2.1"
+    ],
+    "required": false,
+    "description": "Model version to generate with."
+   },
+   "resolution": {
+    "type": "enum",
+    "title": "Resolution",
+    "default": "1K",
+    "options": [
+     "512",
+     "1K",
+     "2K",
+     "4K"
+    ],
+    "required": false,
+    "description": "The resolution of the image to generate."
+   },
+   "aspect_ratio": {
+    "type": "enum",
+    "order": 1,
+    "title": "Aspect Ratio",
+    "default": "Default",
+    "options": [
+     "Default",
+     "8:1",
+     "4:1",
+     "21:9",
+     "16:9",
+     "5:4",
+     "4:3",
+     "3:2",
+     "1:1",
+     "2:3",
+     "3:4",
+     "4:5",
+     "9:16",
+     "1:4",
+     "1:8"
+    ],
+    "required": false,
+    "description": "Aspect ratio of the generated image. Default means 1:1 for text to image or match one of the input image's aspect ratio for image editing"
+   },
+   "output_format": {
+    "type": "enum",
+    "order": 4,
+    "title": "Output Format",
+    "default": "png",
+    "options": [
+     "png",
+     "jpeg",
+     "webp"
+    ],
+    "required": false,
+    "description": "File format of the generated image."
+   },
+   "thinking_level": {
+    "type": "enum",
+    "order": 3,
+    "title": "Thinking",
+    "default": "Minimal",
+    "options": [
+     "Minimal",
+     "High"
+    ],
+    "required": false,
+    "description": "How much the model reasons before it generates. Higher can help complex prompts."
+   },
+   "enable_web_search": {
+    "type": "boolean",
+    "title": "Enable Web Search",
+    "default": false,
+    "required": false,
+    "description": "Enable web search for the image generation task. This will allow the model to use the latest information from the web to generate the image."
+   }
+  },
+  "version": 3
+ },
+ "metadata": {
+  "isVerified": true,
+  "termsUrls": [],
+  "inputTypes": [
+   "text",
+   "image"
+  ],
+  "outputTypes": [
+   "image"
+  ]
+ },
+ "createdAt": "2025-05-07T04:50:35.896Z",
+ "updatedAt": "2026-10-12T12:43:15.787Z"
+}
